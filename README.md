@@ -26,6 +26,35 @@ UsageStats 给的是 Activity 级别的 `RESUMED / PAUSED / STOPPED` 事件。�
 
 ---
 
+## 开始之前：你要准备三样东西
+
+App 第一次打开会让你填三格。它们都得你自己先准备好：
+
+| App 里那一格 | 它是什么 | 从哪来 |
+| --- | --- | --- |
+| 聊天页网址 | 你平时跟 AI 聊天的那个网页 | 你本来就有（自建页面、SillyTavern、LobeChat、Open WebUI…的网址） |
+| 上报地址 | 收手机数据的一个小服务的网址 | 你自己跑 `server/server.py`，再让手机连得上它（下面第 2 步） |
+| 上报口令 | 防止别人往你的服务里乱写、读走你的位置 | `server.py` 第一次启动时自动生成并打印出来 |
+
+最少的上手步骤（一台装了 Python 3 的电脑或服务器就行）：
+
+```bash
+# 1. 拿到代码，跑起收数据的服务；它会打印「上报口令：xxxx」，记下来
+git clone https://github.com/jiangxi1129/aiphonepeek && cd aiphonepeek
+python3 server/server.py --data ~/aiphonepeek-data
+
+# 2. 让手机连得上它，二选一：
+#    a) 有自己的域名 / 反代（Caddy、Nginx…）：把 127.0.0.1:8787 反代成一个 https 网址，那个网址就是「上报地址」
+#    b) 先试试：另开一个终端跑 Cloudflare 的临时隧道（要先装 cloudflared），
+#       它会打印一个 https://xxxx.trycloudflare.com，这就是「上报地址」（每次重开都会变，长期用请选 a）
+cloudflared tunnel --url http://127.0.0.1:8787
+
+# 3. 手机装 APK（Releases 页下载），打开后填上面三样，点「保存并测试上报地址」显示「连得上」就好了
+# 4. 让你的 AI 来读：GET {上报地址}/footprint（带口令），或者用 mcp/ 里的 MCP 工具
+```
+
+---
+
 ## 目录
 
 ```
@@ -39,7 +68,7 @@ mcp/       可选：把 /footprint 包成 MCP 工具（peek_mcp.py）
 
 ### 1. 先把服务跑起来（见下文「服务」）
 
-壳要往一个你自己的地址报数据，所以先有服务：局域网/反代到公网都行。**口令必填**（不设服务不启动），公网请务必用 https。
+壳要往一个你自己的地址报数据，所以先有服务：局域网/反代到公网都行，最省事的做法见上面「开始之前」。口令不手动指定会自动生成并打印出来，公网请务必用 https。
 
 ### 2. 下载 APK
 
@@ -54,7 +83,7 @@ Release 包如果文件名带 `-debugsigned`，说明仓库作者没配签名，
 | --- | --- | --- |
 | 聊天页网址 | `https://chat.example.com/` | 壳里全屏打开的网页。只有同源（协议、主机名、端口都一样）的页面留在壳里，其它外链交给系统浏览器；也只有它能用麦克风/摄像头/定位和 `AiPhonePeek` 接口。建议用 https；填 `http://` 时（比如家里局域网），每次网页要定位都会弹窗问你 |
 | 上报地址 | `https://peek.example.com` | 收数据的服务，**不带** `/report`。壳会 POST 到 `{上报地址}/report` 和 `{上报地址}/location`。留空 = 不上报，后台服务会停 |
-| 上报口令 | `你自己定的一串` | 在请求头带 `Authorization: Bearer <口令>`，要和服务端 `PEEK_TOKEN` 一致 |
+| 上报口令 | `server.py 打印的那串` | 在请求头带 `Authorization: Bearer <口令>`；服务端没指定时第一次启动自动生成，存在数据目录的 `token` 文件里 |
 
 「保存并测试上报地址」会请求 `{上报地址}/health`。
 
@@ -115,7 +144,7 @@ PEEK_TOKEN=换成你自己的一长串 python3 server/server.py --host 127.0.0.1
 | `--host` / `PEEK_HOST` | 监听地址，默认 `127.0.0.1`。要给手机访问就放到反代（Caddy、Nginx、Cloudflare Tunnel…）后面并上 https |
 | `--port` / `PEEK_PORT` | 默认 8787 |
 | `--data` / `PEEK_DATA` | 数据目录，默认 `./data`（建议放仓库外）：`usage.json`、`locations.jsonl`、`named_places.json`、`regeo_cache.json` |
-| `--token` / `PEEK_TOKEN` | **口令，必填**。除 `/health` 外都要 `Authorization: Bearer <口令>`。只在本机自己试用可以加 `--no-token`，它只能配本机地址；前面挂了反代或隧道就别用 |
+| `--token` / `PEEK_TOKEN` | **口令**。不给就第一次启动时自动生成一个，存进数据目录的 `token` 文件、以后一直用它（想换就删掉这个文件）。除 `/health` 外都要 `Authorization: Bearer <口令>`。只在本机自己试用可以加 `--no-token`，它只能配本机地址；前面挂了反代或隧道就别用 |
 | `--amap-key` / `AMAP_KEY` | **可选**高德 Web 服务 key。配了会把 WGS-84 坐标换成 GCJ-02 再反查地名，**这意味着坐标会发给高德**（结果按坐标缓存，十米内问过的点不再问）；没配就显示坐标，不联网 |
 | `--who` / `PEEK_WHO` | 给 AI 读的文字里怎么称呼机主，默认「用户」 |
 

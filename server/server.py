@@ -540,16 +540,57 @@ def main():
     ap.add_argument("--amap-key", default=os.environ.get("AMAP_KEY", ""), help="可选：高德 Web 服务 key，用于坐标反查地名")
     ap.add_argument("--who", default=os.environ.get("PEEK_WHO", "用户"), help="给 AI 读的 text 里怎么称呼机主，默认「用户」")
     a = ap.parse_args()
+    # 数据文件（位置、使用记录、口令）都只给自己读
+    os.umask(0o077)
     loopback = a.host in ("127.0.0.1", "localhost", "::1")
-    if not a.token and not a.no_token:
-        sys.exit("没设口令，不启动。手机能连上的部署（局域网、反代、隧道）都必须设口令：--token 或环境变量 PEEK_TOKEN。只在本机自己试用可以加 --no-token。")
     if a.no_token and not a.token and not loopback:
         sys.exit("--no-token 只能配本机地址（127.0.0.1 / localhost / ::1）。")
-    Handler.store = Store(Path(a.data), a.amap_key, a.who)
+    data_dir = Path(a.data)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    # 小葱 r3 P2：umask 管不到升级前就存在的文件，启动时把数据目录和已有数据文件收紧一次
+    try:
+        os.chmod(data_dir, 0o700)
+    except OSError:
+        pass
+    for name in ("usage.json", "locations.jsonl", "named_places.json", "regeo_cache.json", "token"):
+        try:
+            os.chmod(data_dir / name, 0o600)
+        except OSError:
+            pass
+    generated = False
+    token_source = "参数/环境变量" if a.token else ""
+    if not a.token and not a.no_token:
+        # 没给口令：第一次自动生成一个存进数据目录，以后每次启动都用它（换口令就删掉这个文件或用 --token）
+        tf = data_dir / "token"
+        try:
+            a.token = tf.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            a.token = ""
+        token_source = "文件 %s" % tf
+        if not a.token:
+            import secrets
+            a.token = secrets.token_urlsafe(12)
+            tf.write_text(a.token + "\n", encoding="utf-8")
+            generated = True
+        try:
+            os.chmod(tf, 0o600)
+        except OSError:
+            pass
+    Handler.store = Store(data_dir, a.amap_key, a.who)
     Handler.token = a.token
     if not a.token:
         print("警告：没有口令，只适合本机试用。前面挂了反代或隧道的话，任何人都能读写你的位置数据。", flush=True)
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    if a.token:
+        print("\n" + "=" * 60, flush=True)
+        print("在手机 App 里填：", flush=True)
+        print("  上报地址：手机能连上这台机器的网址（本机是 http://%s:%d，手机要连就得反代或开隧道，见 README「开始之前」）" % (a.host, a.port), flush=True)
+        # 小葱 r3 P2：完整口令只在刚生成时打印一次，免得长期落进 systemd/Docker 日志
+        if generated:
+            print("  上报口令：%s（刚生成，存在 %s；以后启动不再显示，忘了就去看这个文件）" % (a.token, data_dir / "token"), flush=True)
+        else:
+            print("  上报口令：已配置（来自%s）" % token_source, flush=True)
+        print("=" * 60 + "\n", flush=True)
     print("listening on http://%s:%d  data=%s  token=%s  amap=%s" % (a.host, a.port, a.data, "on" if a.token else "off", "on" if a.amap_key else "off"), flush=True)
     try:
         srv.serve_forever()

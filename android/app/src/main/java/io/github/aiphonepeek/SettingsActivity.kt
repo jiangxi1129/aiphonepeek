@@ -35,18 +35,23 @@ class SettingsActivity : AppCompatActivity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(32), dp(20), dp(24)) }
         col.addView(TextView(this).apply { text = getString(R.string.app_name) + " 设置"; textSize = 22f })
         col.addView(hint("数据只会发到下面「上报地址」，不会发给任何别的地方。"))
+        // 11/13 息息：「别人怎么知道要弄这几个？」——第一屏就说清楚这三格从哪来
+        col.addView(TextView(this).apply {
+            text = "第一次用？下面三格要先准备好：聊天页是你本来就有的网页；上报地址和口令来自你自己跑的收数据小服务（server.py，启动时会打印口令）。步骤见说明书「开始之前」：https://github.com/jiangxi1129/aiphonepeek"
+            textSize = 13f; setPadding(0, dp(8), 0, dp(4)); autoLinkMask = android.text.util.Linkify.WEB_URLS
+        })
 
         col.addView(label("聊天页网址（壳里打开的网页）"))
         chat = field(Config.chatUrl(this), "https://chat.example.com/", InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_CLASS_TEXT)
         col.addView(chat)
 
-        col.addView(label("上报地址（收数据的服务，不带 /report）"))
+        col.addView(label("上报地址（你跑的 server.py 对外的网址，不带 /report）"))
         report = field(Config.reportUrl(this), "https://peek.example.com", InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_CLASS_TEXT)
         col.addView(report)
         col.addView(hint("http:// 可以用（局域网），但位置会明文传输；公网请用 https://。"))
 
-        col.addView(label("上报口令（和服务端 PEEK_TOKEN 一样，作为 Authorization: Bearer 发送）"))
-        token = field(Config.token(this), "服务端没设口令就留空", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        col.addView(label("上报口令（server.py 启动时打印的那串）"))
+        token = field(Config.token(this), "server.py 打印的「上报口令」", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         col.addView(token)
 
         col.addView(Button(this).apply { text = "保存并打开"; setOnClickListener { save(thenFinish = true) } })
