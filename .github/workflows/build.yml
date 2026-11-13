@@ -13,6 +13,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "桌面上显示的 App 名字（留空用 android/gradle.properties 里的 appName）"
+        required: false
+        default: ""
+      icon_url:
+        description: "图标图片的网址（PNG/JPG，方的最好；留空就用仓库里的 android/custom-icon.png，没有就用默认图标）"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -46,16 +55,44 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Custom icon (optional)
+        env:
+          ICON_URL: ${{ inputs.icon_url }}
+        run: |
+          SRC=""
+          if [ -n "$ICON_URL" ]; then
+            curl -fsSL --max-filesize 5000000 "$ICON_URL" -o "$RUNNER_TEMP/icon-src"
+            SRC="$RUNNER_TEMP/icon-src"
+          elif [ -f android/custom-icon.png ]; then
+            SRC="android/custom-icon.png"
+          fi
+          if [ -z "$SRC" ]; then echo "用默认图标"; exit 0; fi
+          IM=$(command -v magick || command -v convert || true)
+          if [ -z "$IM" ]; then sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick; IM=$(command -v magick || command -v convert); fi
+          "$IM" identify "$SRC" >/dev/null 2>&1 || identify "$SRC" >/dev/null || { echo "::error::图标不是能识别的图片"; exit 1; }
+          RES=android/app/src/main/res
+          # 自定义图标：去掉默认的自适应图标，换成各种分辨率的 PNG（居中裁成正方形）
+          rm -f "$RES/mipmap-anydpi-v26/ic_launcher.xml"
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            n="${d%%:*}"; s="${d##*:}"
+            mkdir -p "$RES/mipmap-$n"
+            "$IM" "$SRC" -resize "${s}x${s}^" -gravity center -extent "${s}x${s}" "$RES/mipmap-$n/ic_launcher.png"
+          done
+          echo "图标已换成：$SRC"
+
       - name: Build release APK
         working-directory: android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          APP_NAME: ${{ inputs.app_name }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="0.0.0-dev"
-          gradle assembleRelease -PuseMirror=false -PversionName="$VERSION" -PversionCode="$GITHUB_RUN_NUMBER"
+          EXTRA=()
+          if [ -n "$APP_NAME" ]; then EXTRA+=("-PappName=$APP_NAME"); fi
+          gradle assembleRelease -PuseMirror=false -PversionName="$VERSION" -PversionCode="$GITHUB_RUN_NUMBER" "${EXTRA[@]}"
 
       - name: Rename artifact
         run: |

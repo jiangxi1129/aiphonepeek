@@ -64,7 +64,21 @@ Release 包如果文件名带 `-debugsigned`，说明仓库作者没配签名，
 - **长按桌面图标 → 「设置」**；
 - 网页打不开 / 空白时，自动出现的说明页上有「打开设置」按钮。
 
-应用名（桌面图标下的名字）可以在编译时改：`-PappName="我的壳"` 或改 `android/gradle.properties` 里的 `appName`。
+### 换成你自己的名字和图标
+
+不用装 Android Studio，在 GitHub 网页上就能出一个自己的版本：
+
+1. 右上角 **Fork** 一份到你自己的账号。
+2. 进你那份仓库的 **Actions** 页，左边点 **build-release-apk**，右边 **Run workflow**，填两个框：
+   - App 名字：桌面图标下面显示的字；
+   - 图标图片的网址：一张方形的 PNG/JPG（不方的会居中裁成正方形）。
+3. 跑完（两三分钟）点进这次运行，最下面 **Artifacts** 里下载 apk。
+
+想每次发版都用同一个图标，就把图片命名成 `android/custom-icon.png` 放进仓库，名字写进 `android/gradle.properties` 的 `appName`，以后推 `v*` 标签自动出的包都是你的样子。
+
+本地编译也一样：`-PappName="我的壳"`，图标换 `android/custom-icon.png` 再按上面 Actions 里的做法生成，或者直接改 `android/app/src/main/res/`。
+
+> 包名没变（都是 `io.github.aiphonepeek`），所以一台手机上只能装一个版本；换名字换图标后直接覆盖安装即可（签名要一致）。
 
 ### 4. 开权限
 
