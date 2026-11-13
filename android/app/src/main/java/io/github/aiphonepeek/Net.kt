@@ -35,11 +35,12 @@ object Net {
         "${e.javaClass.simpleName}: ${e.message?.take(80) ?: ""}"
     }
 
-    /** 设置页「测试」用：GET /health。成功返回 null。 */
+    /** 设置页「测试」用：先 GET /health 看连不连得上，再 GET /places 带口令，看口令对不对（/health 不查口令）。成功返回 null。 */
     fun ping(ctx: Context): String? = try {
-        val conn = open(ctx, "/health", "GET")
-        val code = conn.responseCode
-        conn.disconnect()
-        if (code in 200..299) null else if (code == 401 || code == 403) "HTTP $code（口令不对？）" else "HTTP $code"
+        val h = open(ctx, "/health", "GET"); val hc = h.responseCode; h.disconnect()
+        if (hc !in 200..299) "HTTP $hc" else {
+            val p = open(ctx, "/places", "GET"); val pc = p.responseCode; p.disconnect()
+            if (pc in 200..299) null else if (pc == 401 || pc == 403) "地址连得上，但口令不对（HTTP $pc）" else "地址连得上，查口令时 HTTP $pc"
+        }
     } catch (e: Exception) { "${e.javaClass.simpleName}: ${e.message?.take(80) ?: ""}" }
 }

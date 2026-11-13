@@ -30,6 +30,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -109,7 +110,12 @@ class MainActivity : AppCompatActivity() {
         }
         statusText = TextView(this).apply { setTextColor(Color.parseColor("#333333")); textSize = 15f }
         statusView.addView(statusText)
-        statusView.addView(Button(this).apply { text = "立刻补报一次"; setOnClickListener { Sync.runAsync(this@MainActivity, "manual", force = true); statusText.postDelayed({ refreshStatus() }, 3000) } })
+        // 实测：点了以后卡片一直写「正在补报…」不动、上一轮还在跑时这一下被静默吞掉。现在开没开跑都说一声，跑的时候每秒刷新一次，跑完自己停
+        statusView.addView(Button(this).apply { text = "立刻补报一次"; setOnClickListener {
+            if (Sync.isRunning()) Toast.makeText(this@MainActivity, "上一轮还在补报，等它跑完", Toast.LENGTH_SHORT).show()
+            else if (!Sync.runAsync(this@MainActivity, "manual", force = true)) Toast.makeText(this@MainActivity, "没开始：先在设置里填上报地址", Toast.LENGTH_SHORT).show()
+            watchSync()
+        } })
         statusView.addView(Button(this).apply { text = "权限清单"; setOnClickListener { startActivity(Intent(this@MainActivity, PermissionsActivity::class.java)) } })
         statusView.addView(Button(this).apply { text = "设置（填聊天页 / 上报地址 / 口令）"; setOnClickListener { showSettings() } })
         val root = FrameLayout(this)
@@ -266,11 +272,12 @@ class MainActivity : AppCompatActivity() {
             if (loadedUrl != startUrl()) { loadedUrl = startUrl(); installBridge(); web.loadUrl(loadedUrl) }
         }
         Sync.runAsync(this, "open")
+        watchSync()
         if (Locator.hasPermission(this)) TrackerService.start(this)
         if (!busy) nextSetupStep()
     }
 
-    override fun onPause() { web.onPause(); CookieManager.getInstance().flush(); super.onPause() }
+    override fun onPause() { if (::statusText.isInitialized) statusText.removeCallbacks(syncTick); web.onPause(); CookieManager.getInstance().flush(); super.onPause() }
 
     private fun afterPermChange() {
         if (Locator.hasPermission(this)) TrackerService.start(this)
@@ -282,13 +289,23 @@ class MainActivity : AppCompatActivity() {
     private fun asked(k: String) = prefs.getBoolean("asked_$k", false)
     private fun markAsked(k: String) = prefs.edit().putBoolean("asked_$k", true).apply()
 
+    // 小蒜 r1 P2：原来跟 120 秒就停，慢的那轮会一直停在「正在…」。现在只要还在跑就一直跟（头两分钟每秒，之后每 5 秒），跑完再刷一次停下
+    // 小蒜 r1 P3：只在状态卡看得见时跟，onPause 摘掉，别让离开的页面在后台空转
+    private val syncTick = object : Runnable {
+        override fun run() {
+            refreshStatus()
+            if (Sync.isRunning()) statusText.postDelayed(this, if (System.currentTimeMillis() - Sync.startedAt < 120_000) 1000 else 5000)
+        }
+    }
+    private fun watchSync() { if (!::statusText.isInitialized || statusView.visibility != View.VISIBLE) return; statusText.removeCallbacks(syncTick); statusText.postDelayed(syncTick, 300) }
+
     private lateinit var statusView: LinearLayout
     private lateinit var statusText: TextView
     private fun refreshStatus() {
         if (!::statusText.isInitialized) return
-        val last = prefs.getString("last_sync", "") ?: ""
         val perm = if (PermissionsActivity.allOk(this)) "权限都开好了" else if (PermissionsActivity.missingRequired(this)) "还有必需的权限没开（使用情况访问 / 位置），点「权限清单」" else "必需的都开了，还有几项建议开"
-        statusText.text = "聊天页没填，这里只管上报。\n\n上次补报：${last.ifEmpty { "还没有" }}${if (Sync.isRunning()) "（正在补报…）" else ""}\n$perm\n"
+        val running = if (Sync.isRunning() && Sync.stage.isNotEmpty()) "\n→ ${Sync.stage}，已 ${(System.currentTimeMillis() - Sync.startedAt) / 1000} 秒" else ""
+        statusText.text = "聊天页没填，这里只管上报。\n\n${Sync.summary(this)}$running\n\n$perm\n\n（一天里用了不到 1 分钟的 App、不到 30 秒的零碎片段不记。）"
     }
 
     // 11/13：原来一项一项弹对话框要权限，用户嫌烦还得自己找系统页面。改成一页权限清单：第一次打开、或缺必需的（使用情况访问、位置）时自动打开，每次启动最多弹一次

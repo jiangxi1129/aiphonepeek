@@ -61,7 +61,7 @@ class SettingsActivity : AppCompatActivity() {
             setOnClickListener { startActivity(android.content.Intent(this@SettingsActivity, PermissionsActivity::class.java)) }
         })
         status = TextView(this).apply { textSize = 12f; setPadding(0, dp(16), 0, 0)
-            text = "上次补报：" + (getSharedPreferences(Config.PREFS, MODE_PRIVATE).getString("last_sync", "") ?: "").ifEmpty { "还没有" } }
+            text = Sync.summary(this@SettingsActivity) }
         col.addView(status)
         col.addView(hint("版本 ${BuildConfig.VERSION}"))
         setContentView(ScrollView(this).apply { addView(col) })
@@ -91,7 +91,8 @@ class SettingsActivity : AppCompatActivity() {
         val app = applicationContext
         Thread {
             val err = Net.ping(app)
-            runOnUiThread { status.text = if (err == null) "连得上（/health 正常）" else "连不上：$err\n（确认服务已启动、地址和口令对）" }
+            val msg = if (err == null) "连得上，口令也对 ✓" else "不行：$err\n（确认服务已启动、地址和口令对；模拟器里连本机的服务要填 http://10.0.2.2:端口）"
+            runOnUiThread { status.text = msg; Toast.makeText(this, msg.lineSequence().first(), Toast.LENGTH_LONG).show() }
         }.start()
     }
 }

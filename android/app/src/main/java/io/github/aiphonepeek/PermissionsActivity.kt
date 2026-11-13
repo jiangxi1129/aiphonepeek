@@ -68,17 +68,7 @@ class PermissionsActivity : AppCompatActivity() {
         title = getString(R.string.app_name) + " · 权限清单"
         getSharedPreferences(Config.PREFS, MODE_PRIVATE).edit().putBoolean(PREF_INTRO_DONE, true).apply()
 
-        if (Build.VERSION.SDK_INT >= 33) rows += Row("通知", "常驻通知要用，不开的话系统可能把后台记录藏起来。",
-            { notifOk(this) }, { null }) { ask(Manifest.permission.POST_NOTIFICATIONS) }
-
-        rows += Row("位置（始终允许）", "记你去过哪。先开位置，再选「始终允许」，不然退到后台就记不了轨迹。",
-            { Locator.hasPermission(this) && Locator.hasBackground(this) },
-            { if (Locator.hasPermission(this) && !Locator.hasBackground(this)) "只开了一半，还差「始终允许」" else null }) {
-            if (!Locator.hasPermission(this)) ask(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            else ask(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-        }
-
-        rows += Row("使用情况访问", "用来补报最近 7 天手机用了什么。到系统页找到「${getString(R.string.app_name)}」打开。",
+        rows += Row("使用情况访问 · 必需", "用来补报最近 7 天手机用了什么。点「去打开」会跳到系统那页，把开关打开再按返回。",
             { UsageReader.hasAccess(this) }, { null }) {
             try {
                 // 带上包名，新一点的系统会直接定位到本 App
@@ -87,6 +77,16 @@ class PermissionsActivity : AppCompatActivity() {
                 try { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) } catch (_: Exception) { openAppDetails() }
             }
         }
+
+        rows += Row("位置（始终允许）· 必需", "记你去过哪。先开位置，再选「始终允许」，不然退到后台就记不了轨迹。",
+            { Locator.hasPermission(this) && Locator.hasBackground(this) },
+            { if (Locator.hasPermission(this) && !Locator.hasBackground(this)) "只开了一半，还差「始终允许」" else null }) {
+            if (!Locator.hasPermission(this)) ask(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            else ask(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+
+        if (Build.VERSION.SDK_INT >= 33) rows += Row("通知", "常驻通知要用，不开的话系统可能把后台记录藏起来。",
+            { notifOk(this) }, { null }) { ask(Manifest.permission.POST_NOTIFICATIONS) }
 
         rows += Row("忽略电池优化", "别让手机省电把后台记录杀掉。弹出来选「允许」。",
             { batteryOk(this) }, { null }) {
@@ -149,6 +149,7 @@ class PermissionsActivity : AppCompatActivity() {
             r.status.text = if (ok) "✓ 已开" else "✗ 未开" + (r.partial()?.let { "（$it）" } ?: "")
             r.status.setTextColor(if (ok) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
             r.btn.isEnabled = !ok
+            r.btn.text = if (ok) "已开" else "去打开"
         }
         header.text = if (left == 0) "都好了 🎉" else "还差 $left 项" + if (missingRequired(this)) "（使用情况访问和位置是必需的）" else ""
         backBtn.text = if (left == 0) "回到聊天页" else "先不弄了，回到聊天页"
