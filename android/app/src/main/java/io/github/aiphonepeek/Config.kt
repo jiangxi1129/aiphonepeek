@@ -12,8 +12,9 @@ object Config {
     fun reportUrl(ctx: Context): String = p(ctx).getString("report_url", "") ?: ""
     fun token(ctx: Context): String = p(ctx).getString("token", "") ?: ""
 
-    /** 聊天页填了就能用；上报地址留空 = 不上报（后台服务也会停）。 */
-    fun isConfigured(ctx: Context) = chatUrl(ctx).isNotEmpty()
+    /** 聊天页、上报地址至少填一个就能用。聊天页空着 = 主界面显示本地状态页；上报地址空着 = 不上报（后台服务也会停）。 */
+    fun isConfigured(ctx: Context) = chatUrl(ctx).isNotEmpty() || reportUrl(ctx).isNotEmpty()
+    fun hasChat(ctx: Context) = chatUrl(ctx).isNotEmpty()
     fun reportEnabled(ctx: Context) = reportUrl(ctx).isNotEmpty()
 
     fun save(ctx: Context, chat: String, report: String, token: String) {

@@ -103,8 +103,18 @@ class MainActivity : AppCompatActivity() {
         panel.addView(Button(this).apply { text = "重新加载"; setOnClickListener { panel.visibility = View.GONE; web.reload() } })
         panel.addView(Button(this).apply { text = "清掉网页缓存再打开（不会退出登录）"; setOnClickListener { panel.visibility = View.GONE; clearWebCacheAndReload() } })
         panel.addView(Button(this).apply { text = "打开设置（改网址 / 口令）"; setOnClickListener { showSettings() } })
+        // 聊天页网址空着时（只想上报、不想登录聊天页）：显示一张本地状态卡，代替网页
+        statusView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.parseColor("#FAFAFA")); setPadding(48, 160, 48, 48); visibility = View.GONE
+        }
+        statusText = TextView(this).apply { setTextColor(Color.parseColor("#333333")); textSize = 15f }
+        statusView.addView(statusText)
+        statusView.addView(Button(this).apply { text = "立刻补报一次"; setOnClickListener { Sync.runAsync(this@MainActivity, "manual", force = true); statusText.postDelayed({ refreshStatus() }, 3000) } })
+        statusView.addView(Button(this).apply { text = "权限清单"; setOnClickListener { startActivity(Intent(this@MainActivity, PermissionsActivity::class.java)) } })
+        statusView.addView(Button(this).apply { text = "设置（填聊天页 / 上报地址 / 口令）"; setOnClickListener { showSettings() } })
         val root = FrameLayout(this)
         root.addView(web, FrameLayout.LayoutParams(-1, -1))
+        root.addView(statusView, FrameLayout.LayoutParams(-1, -1).apply { gravity = Gravity.TOP })
         root.addView(panel, FrameLayout.LayoutParams(-1, -1).apply { gravity = Gravity.TOP })
         setContentView(root)
         CookieManager.getInstance().setAcceptCookie(true)
@@ -244,8 +254,17 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing) return
         if (!Config.isConfigured(this)) { showSettings(); return }
         web.onResume()
-        // 设置页改了网址就重新加载；第一次也走这里。接口白名单跟着网址换
-        if (loadedUrl != startUrl()) { loadedUrl = startUrl(); installBridge(); web.loadUrl(loadedUrl) }
+        if (!Config.hasChat(this)) {
+            // 小葱 r4 P3：之前网页的错误面板别压在状态卡上
+            panel.visibility = View.GONE
+            statusView.visibility = View.VISIBLE
+            if (loadedUrl.isNotEmpty()) { loadedUrl = ""; web.loadUrl("about:blank") }
+            refreshStatus()
+        } else {
+            statusView.visibility = View.GONE
+            // 设置页改了网址就重新加载；第一次也走这里。接口白名单跟着网址换
+            if (loadedUrl != startUrl()) { loadedUrl = startUrl(); installBridge(); web.loadUrl(loadedUrl) }
+        }
         Sync.runAsync(this, "open")
         if (Locator.hasPermission(this)) TrackerService.start(this)
         if (!busy) nextSetupStep()
@@ -263,8 +282,31 @@ class MainActivity : AppCompatActivity() {
     private fun asked(k: String) = prefs.getBoolean("asked_$k", false)
     private fun markAsked(k: String) = prefs.edit().putBoolean("asked_$k", true).apply()
 
-    /** 第一次打开时一步步把权限要齐；每样只问一次（使用记录那项一天最多提醒一次）。 */
+    private lateinit var statusView: LinearLayout
+    private lateinit var statusText: TextView
+    private fun refreshStatus() {
+        if (!::statusText.isInitialized) return
+        val last = prefs.getString("last_sync", "") ?: ""
+        val perm = if (PermissionsActivity.allOk(this)) "权限都开好了" else if (PermissionsActivity.missingRequired(this)) "还有必需的权限没开（使用情况访问 / 位置），点「权限清单」" else "必需的都开了，还有几项建议开"
+        statusText.text = "聊天页没填，这里只管上报。\n\n上次补报：${last.ifEmpty { "还没有" }}${if (Sync.isRunning()) "（正在补报…）" else ""}\n$perm\n"
+    }
+
+    // 11/13：原来一项一项弹对话框要权限，用户嫌烦还得自己找系统页面。改成一页权限清单：第一次打开、或缺必需的（使用情况访问、位置）时自动打开，每次启动最多弹一次
+    private var permsShownThisLaunch = false
     private fun nextSetupStep() {
+        if (busy || isFinishing || settingsOpen || permsShownThisLaunch) return
+        // 小葱 r4 P2：上报关着时那两项权限没用处，别每次启动都催
+        val missing = Config.reportEnabled(this) && PermissionsActivity.missingRequired(this)
+        if (missing || !prefs.getBoolean("perms_seen", false)) {
+            permsShownThisLaunch = true
+            prefs.edit().putBoolean("perms_seen", true).apply()
+            startActivity(Intent(this, PermissionsActivity::class.java))
+        }
+    }
+
+    /** 旧的逐项引导（11/13 起不用了，留着备查）。 */
+    @Suppress("unused")
+    private fun oldSetupStep() {
         if (busy || isFinishing || settingsOpen) return
         if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS) && !asked("notif")) {
             markAsked("notif"); busy = true; askPerms.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)); return

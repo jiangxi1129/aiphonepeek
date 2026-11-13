@@ -11,6 +11,8 @@ object Sync {
     @Volatile var lastResult: String = "还没跑过"
         private set
 
+    fun isRunning() = running.get()
+
     fun runAsync(ctx: Context, trigger: String, days: Int = 7, force: Boolean = false) {
         val app = ctx.applicationContext
         if (!Config.reportEnabled(app)) return

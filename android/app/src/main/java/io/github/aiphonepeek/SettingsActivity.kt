@@ -12,7 +12,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * 设置页：聊天页网址、上报地址（留空就不上报）、口令。第一次打开自动出现；之后从
+ * 设置页：聊天页网址（可空）、上报地址（可空，留空就不上报，两个至少填一个）、口令。第一次打开自动出现；之后从
  * 「长按返回键」「通知栏的『设置』按钮」「长按桌面图标 → 设置」「网页打不开时的说明页」进入。
  */
 class SettingsActivity : AppCompatActivity() {
@@ -37,11 +37,11 @@ class SettingsActivity : AppCompatActivity() {
         col.addView(hint("数据只会发到下面「上报地址」，不会发给任何别的地方。"))
         // 11/13 息息：「别人怎么知道要弄这几个？」——第一屏就说清楚这三格从哪来
         col.addView(TextView(this).apply {
-            text = "第一次用？下面三格要先准备好：聊天页是你本来就有的网页；上报地址和口令来自你自己跑的收数据小服务（server.py，启动时会打印口令）。步骤见说明书「开始之前」：https://github.com/jiangxi1129/aiphonepeek"
+            text = "第一次用？聊天页和上报地址至少填一个：聊天页是你本来就有的网页（不想登录就先空着，主界面会显示本地状态页）；上报地址和口令来自你自己跑的收数据小服务（server.py，启动时会打印口令）。步骤见说明书「开始之前」：https://github.com/jiangxi1129/aiphonepeek"
             textSize = 13f; setPadding(0, dp(8), 0, dp(4)); autoLinkMask = android.text.util.Linkify.WEB_URLS
         })
 
-        col.addView(label("聊天页网址（壳里打开的网页）"))
+        col.addView(label("聊天页网址（壳里打开的网页，可以先空着）"))
         chat = field(Config.chatUrl(this), "https://chat.example.com/", InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_CLASS_TEXT)
         col.addView(chat)
 
@@ -57,15 +57,8 @@ class SettingsActivity : AppCompatActivity() {
         col.addView(Button(this).apply { text = "保存并打开"; setOnClickListener { save(thenFinish = true) } })
         col.addView(Button(this).apply { text = "保存并测试上报地址"; setOnClickListener { save(thenFinish = false); test() } })
         col.addView(Button(this).apply {
-            text = "重新走一遍权限引导"
-            setOnClickListener {
-                // 清掉「已问过」标记，回到网页后会从头再问一遍
-                getSharedPreferences(Config.PREFS, MODE_PRIVATE).edit().apply {
-                    listOf("notif", "loc", "bgloc", "battery").forEach { remove("asked_$it") }
-                    remove("usage_asked_at")
-                }.apply()
-                if (save(thenFinish = true)) Toast.makeText(this@SettingsActivity, "回到网页后会重新询问权限", Toast.LENGTH_SHORT).show()
-            }
+            text = "权限清单（看哪些没开）"
+            setOnClickListener { startActivity(android.content.Intent(this@SettingsActivity, PermissionsActivity::class.java)) }
         })
         status = TextView(this).apply { textSize = 12f; setPadding(0, dp(16), 0, 0)
             text = "上次补报：" + (getSharedPreferences(Config.PREFS, MODE_PRIVATE).getString("last_sync", "") ?: "").ifEmpty { "还没有" } }
@@ -76,12 +69,14 @@ class SettingsActivity : AppCompatActivity() {
 
     /** 校验并保存。成功返回 true。 */
     private fun save(thenFinish: Boolean): Boolean {
-        val c = Config.normalize(chat.text.toString(), false)
+        val rawChat = chat.text.toString().trim()
+        val c = if (rawChat.isEmpty()) "" else Config.normalize(rawChat, false)
         // 上报地址可以留空：留空就是不上报，后台服务当场停掉
         val rawReport = report.text.toString().trim()
         val r = if (rawReport.isEmpty()) "" else Config.normalize(rawReport, true)
-        if (c == null) { chat.error = "要以 http:// 或 https:// 开头"; return false }
+        if (c == null) { chat.error = "要以 http:// 或 https:// 开头，或者留空"; return false }
         if (r == null) { report.error = "要以 http:// 或 https:// 开头，或者留空不上报"; return false }
+        if (c.isEmpty() && r.isEmpty()) { report.error = "聊天页和上报地址至少填一个"; return false }
         Config.save(this, c, r, token.text.toString().trim())
         if (r.isEmpty()) {
             stopService(android.content.Intent(this, TrackerService::class.java))
