@@ -1,0 +1,12 @@
+# 服务端数据：位置和使用记录，千万别提交
+/data/
+/server/data/
+*.jsonl
+usage.json
+named_places.json
+regeo_cache.json
+
+# 签名
+*.jks
+*.keystore
+keystore.properties
